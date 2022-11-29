@@ -3,9 +3,7 @@ package neoflix.services;
 import neoflix.AppUtils;
 import neoflix.NeoflixApp;
 import neoflix.Params;
-import org.neo4j.driver.Driver;
-import org.neo4j.driver.TransactionContext;
-import org.neo4j.driver.Values;
+import org.neo4j.driver.*;
 
 import java.util.HashMap;
 import java.util.List;
@@ -48,8 +46,22 @@ public class MovieService {
         // TODO: Execute a query in a new Read Transaction
         // TODO: Get a list of Movies from the Result
         // TODO: Close the session
+        try (Session session = driver.session()) {
 
-        return AppUtils.process(popular, params);
+            String query = String.format(
+                                "MATCH (m:Movie) WHERE m.%s IS NOT NULL RETURN m { .* } AS movie ORDER BY m.%s %s SKIP $skip LIMIT $limit",
+                                params.sort().name(), params.sort().name(), params.order().name()
+                            );
+
+            var result = session.executeRead(
+                        tx -> {
+                                Result res =tx.run(query, Values.parameters("skip", params.skip(), "limit", params.limit()));
+                                return res.list(row -> row.get("movie").asMap());
+                        }
+                    );
+            return result;
+        }
+        //return AppUtils.process(popular, params);
     }
     // end::all[]
 

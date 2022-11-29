@@ -4,6 +4,7 @@ import neoflix.AppUtils;
 import neoflix.AuthUtils;
 import neoflix.ValidationException;
 import org.neo4j.driver.Driver;
+import org.neo4j.driver.Session;
 
 import java.util.List;
 import java.util.Map;
@@ -48,6 +49,13 @@ public class AuthService {
         var encrypted = AuthUtils.encryptPassword(plainPassword);
         // tag::constraintError[]
         // TODO: Handle Unique constraints in the database
+
+//        try(Session session = driver.session()){
+//            session.executeRead(tx -> {
+//                tx.
+//            });
+//        }
+
         var foundUser = users.stream().filter(u -> u.get("email").equals(email)).findAny();
         if (foundUser.isPresent()) {
             throw new RuntimeException("An account already exists with the email address");
