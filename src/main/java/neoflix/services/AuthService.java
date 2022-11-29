@@ -7,6 +7,7 @@ import org.neo4j.driver.Driver;
 import org.neo4j.driver.Session;
 import org.neo4j.driver.Value;
 import org.neo4j.driver.Values;
+import org.neo4j.driver.exceptions.ClientException;
 
 import java.util.List;
 import java.util.Map;
@@ -47,19 +48,39 @@ public class AuthService {
      * @return User
      */
     // tag::register[]
-    public Map<String,Object> register(String email, String plainPassword, String name) {
-        var encrypted = AuthUtils.encryptPassword(plainPassword);
-        // tag::constraintError[]
-        // TODO: Handle Unique constraints in the database
+
+    public boolean userExists(String email){
         boolean foundUser = false;
         try(Session session = driver.session()){
-            String query = String.format("MATCH (u:User) WHERE u.email = '%s' OR u.name = '%s' RETURN u { .* } AS TheUser", email, name);
+            String query = String.format("MATCH (u:User) WHERE u.email = '%s' RETURN u { .* } AS TheUser", email);
             var result = session.executeRead(tx -> {
                 var res = tx.run(query);
                 return res.list(row -> row.get("TheUser").asMap());
             });
             foundUser = result.size() != 0;
         }
+        return foundUser;
+    }
+
+    public Optional<Map<String, Object>> getUser(String email){
+        Optional<Map<String, Object>> user = Optional.empty();
+        try(Session session = driver.session()){
+            String query = String.format("MATCH (u:User) WHERE u.email = '%s' RETURN u { .* } AS TheUser", email);
+            var result = session.executeRead(tx -> {
+                var res = tx.run(query);
+                return res.list(row -> row.get("TheUser").asMap());
+            });
+            if(result.size() > 0)
+                user = Optional.of(result.get(0));
+        }
+        return user;
+    }
+
+    public Map<String,Object> register(String email, String plainPassword, String name) {
+        var encrypted = AuthUtils.encryptPassword(plainPassword);
+        // tag::constraintError[]
+        // TODO: Handle Unique constraints in the database
+        boolean foundUser = userExists(email);
 
         //var foundUser = users.stream().filter(u -> u.get("email").equals(email)).findAny();
         if (foundUser) {
@@ -77,6 +98,12 @@ public class AuthService {
                 return res.list(row -> row.get("TheUser").asMap());
             });
             user = result.get(0);
+        }
+        catch (ClientException e) {
+            if (e.code().equals("Neo.ClientError.Schema.ConstraintValidationFailed")) {
+                throw new ValidationException("An account already exists with the email address", Map.of("email","Email address already taken"));
+            }
+            throw e;
         }
 
         //var user = Map.<String,Object>of("email",email, "name",name,
@@ -113,10 +140,14 @@ public class AuthService {
     // tag::authenticate[]
     public Map<String,Object> authenticate(String email, String plainPassword) {
         // TODO: Authenticate the user from the database
-        var foundUser = users.stream().filter(u -> u.get("email").equals(email)).findAny();
-        if (foundUser.isEmpty())
+        //var foundUser = users.stream().filter(u -> u.get("email").equals(email)).findAny();
+        Optional<Map<String, Object>> userOpt = getUser(email);
+
+        if (userOpt.isEmpty())
             throw new ValidationException("Incorrect email", Map.of("email","Incorrect email"));
-        var user = foundUser.get();
+
+        var user = userOpt.get();
+
         if (!plainPassword.equals(user.get("password")) && 
             !AuthUtils.verifyPassword(plainPassword,(String)user.get("password"))) { // 
             throw new ValidationException("Incorrect password", Map.of("password","Incorrect password"));
