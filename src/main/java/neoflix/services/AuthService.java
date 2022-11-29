@@ -5,6 +5,8 @@ import neoflix.AuthUtils;
 import neoflix.ValidationException;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.Session;
+import org.neo4j.driver.Value;
+import org.neo4j.driver.Values;
 
 import java.util.List;
 import java.util.Map;
@@ -49,23 +51,37 @@ public class AuthService {
         var encrypted = AuthUtils.encryptPassword(plainPassword);
         // tag::constraintError[]
         // TODO: Handle Unique constraints in the database
+        boolean foundUser = false;
+        try(Session session = driver.session()){
+            String query = String.format("MATCH (u:User) WHERE u.email = '%s' OR u.name = '%s' RETURN u { .* } AS TheUser", email, name);
+            var result = session.executeRead(tx -> {
+                var res = tx.run(query);
+                return res.list(row -> row.get("TheUser").asMap());
+            });
+            foundUser = result.size() != 0;
+        }
 
-//        try(Session session = driver.session()){
-//            session.executeRead(tx -> {
-//                tx.
-//            });
-//        }
-
-        var foundUser = users.stream().filter(u -> u.get("email").equals(email)).findAny();
-        if (foundUser.isPresent()) {
+        //var foundUser = users.stream().filter(u -> u.get("email").equals(email)).findAny();
+        if (foundUser) {
             throw new RuntimeException("An account already exists with the email address");
         }
         // end::constraintError[]
 
         // TODO: Save user in database
-        var user = Map.<String,Object>of("email",email, "name",name,
-                "userId", String.valueOf(email.hashCode()), "password", encrypted);
-        users.add(user);
+        Map<String, Object> user = null;
+        try(Session session = driver.session()){
+            String query = "CREATE (u:User { userId: randomUuid(), name: $name, email: $email, password: $password} ) RETURN u { .userId, .name, .email} AS TheUser";
+            Value parameters = Values.parameters("name", name, "email", email, "password", encrypted);
+            var result = session.executeWrite(tx -> {
+                var res = tx.run(query, parameters);
+                return res.list(row -> row.get("TheUser").asMap());
+            });
+            user = result.get(0);
+        }
+
+        //var user = Map.<String,Object>of("email",email, "name",name,
+        //        "userId", String.valueOf(email.hashCode()), "password", encrypted);
+       //users.add(user);
 
         String sub = (String) user.get("userId");
         String token = AuthUtils.sign(sub,userToClaims(user), jwtSecret);
