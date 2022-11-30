@@ -46,21 +46,40 @@ public class MovieService {
         // TODO: Execute a query in a new Read Transaction
         // TODO: Get a list of Movies from the Result
         // TODO: Close the session
+//        try (Session session = driver.session()) {
+//
+//            String query = String.format(
+//                                "MATCH (m:Movie) WHERE m.%s IS NOT NULL RETURN m { .* } AS movie ORDER BY m.%s %s SKIP $skip LIMIT $limit",
+//                                params.sort().name(), params.sort().name(), params.order().name()
+//                            );
+//
+//            var result = session.executeRead(
+//                        tx -> {
+//                                Result res =tx.run(query, Values.parameters("skip", params.skip(), "limit", params.limit()));
+//                                return res.list(row -> row.get("movie").asMap());
+//                        }
+//                    );
+//            return result;
+//        }
+
+        // retrieve favorite movie ids
+
+        // return all favorite movies
+        List<Map<String,Object>> resultList = null;
         try (Session session = driver.session()) {
+            resultList = session.executeRead(tx -> {
+                var favoriteMovieIds = getUserFavorites(tx, userId);
 
-            String query = String.format(
-                                "MATCH (m:Movie) WHERE m.%s IS NOT NULL RETURN m { .* } AS movie ORDER BY m.%s %s SKIP $skip LIMIT $limit",
-                                params.sort().name(), params.sort().name(), params.order().name()
-                            );
+//                if(favoriteMovieIds.size() == 0)
+//                    throw new RuntimeException("No favorite movies");
 
-            var result = session.executeRead(
-                        tx -> {
-                                Result res =tx.run(query, Values.parameters("skip", params.skip(), "limit", params.limit()));
-                                return res.list(row -> row.get("movie").asMap());
-                        }
-                    );
-            return result;
+                String query = String.format( "MATCH (m:Movie) WHERE m.%s IS NOT NULL RETURN m { .*, favorite: m.tmdbId IN $favorites } AS movie ORDER BY m.%s %s SKIP $skip LIMIT $limit", params.sort().name(), params.sort().name(), params.order().name());
+                var res= tx.run(query, Values.parameters( "skip", params.skip(), "limit", params.limit(), "favorites",favoriteMovieIds));
+                return res.list(row -> row.get("movie").asMap());
+            });
         }
+
+        return resultList;
         //return AppUtils.process(popular, params);
     }
     // end::all[]
@@ -209,7 +228,10 @@ public class MovieService {
      */
     // tag::getUserFavorites[]
     private List<String> getUserFavorites(TransactionContext tx, String userId) {
-        return List.of();
+        String query = "MATCH (u:User {userId: $userId}) -[:HAS_FAVORITE]-> (m:Movie) RETURN m.tmdbId as movieId";
+        var result = tx.run(query, Values.parameters("userId", userId));
+        var list = result.list(res -> res.get("movieId").toString());
+        return list;
     }
     // end::getUserFavorites[]
 
